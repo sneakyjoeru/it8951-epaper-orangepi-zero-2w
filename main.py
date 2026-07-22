@@ -87,16 +87,27 @@ def main():
             print("Displayed.")
 
         if args.gradient:
-            print("Displaying vertical gradient...")
+            print("Displaying vertical gradient (dithered)...")
             w, h = epd.panel_w, epd.panel_h
-            img = bytearray(w * h)
+            import numpy as np
+            arr = np.zeros((h, w), dtype=np.float64)
             for row in range(h):
                 t = row / max(h - 1, 1)
-                val = int(round(255 - t * 255))  # 255=white at top, 0=black at bottom
-                off = row * w
-                for px in range(w):
-                    img[off + px] = val
-            epd.display_8bpp(list(img), 0, 0, w, h, GC16_MODE)
+                arr[row, :] = 255 - t * 255  # 255=white at top, 0=black at bottom
+            # Floyd-Steinberg dithering to break up banding
+            out = np.zeros((h, w), dtype=np.uint8)
+            for row in range(h):
+                cur = arr[row]
+                q = np.clip(np.round(cur), 0, 255).astype(np.uint8)
+                out[row] = q
+                err = cur - q.astype(np.float64)
+                if w > 1:
+                    arr[row, 1:] += err[:-1] * 7 / 16
+                if row + 1 < h:
+                    arr[row + 1, :-1] += err[1:] * 3 / 16
+                    arr[row + 1, :]   += err * 5 / 16
+                    arr[row + 1, 1:]  += err[:-1] * 1 / 16
+            epd.display_8bpp(list(out.tobytes()), 0, 0, w, h, GC16_MODE)
             print("Done.")
 
         if args.checker is not None:
