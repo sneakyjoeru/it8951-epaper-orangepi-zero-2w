@@ -152,15 +152,12 @@ def main():
 
 
 def _draw_cross(epd, line_width, invert, vertical):
-    """Draw gradient diagonal cross (8bpp, PIL convention: 0=black, 255=white)."""
+    """Draw gradient diagonal cross with random dithering (4bpp, 0=white, 15=black)."""
+    import numpy as np
     w, h = epd.panel_w, epd.panel_h
-    img = bytearray([0 if invert else 255] * (w * h))  # bg: 0=black or 255=white
+    # 4bpp: 0=white, 15=black. bg=15 if invert (black bg) else 0 (white bg)
+    gray = np.full((h, w), 15 if invert else 0, dtype=np.float64)
     cx, cy = w // 2, h // 2
-
-    def set_pixel(x, y, val):
-        if x < 0 or x >= w or y < 0 or y >= h:
-            return
-        img[y * w + x] = val
 
     def draw_line(x0, y0, x1, y1, width):
         dx, dy = x1 - x0, y1 - y0
@@ -177,18 +174,35 @@ def _draw_cross(epd, line_width, invert, vertical):
                 t = cy_pt / max(h - 1, 1)
             else:
                 t = i / max(steps, 1)
-            # PIL: 0=black, 255=white. invert: line goes black→white, else white→black
-            val = int(round(t * 255)) if invert else int(round(255 - t * 255))
+            # Line gray: invert → black(15) to white(0), else white(0) to black(15)
+            line_gray = (15 - t * 15) if invert else (t * 15)
             half_w = width / 2
             for j in range(-int(half_w), int(half_w) + 1):
-                set_pixel(int(round(cx_pt + px_val * j)),
-                          int(round(cy_pt + py_val * j)), val)
+                px = int(round(cx_pt + px_val * j))
+                py = int(round(cy_pt + py_val * j))
+                if 0 <= px < w and 0 <= py < h:
+                    gray[py, px] = line_gray
 
     draw_line(0, 0, cx, cy, line_width)
     draw_line(w - 1, 0, cx, cy, line_width)
     draw_line(0, h - 1, cx, cy, line_width)
     draw_line(w - 1, h - 1, cx, cy, line_width)
-    epd.display_8bpp(list(img), 0, 0, w, h, GC16_MODE)
+
+    # Random dithering: for each pixel, pick base+1 with probability=fraction
+    noise = np.random.random((h, w))
+    base = np.floor(gray).astype(np.int32)
+    frac = gray - base
+    dithered = np.where(noise < frac, base + 1, base)
+    gray4 = np.clip(dithered, 0, 15).astype(np.uint8)
+
+    # Pack 4bpp
+    if w % 2 != 0:
+        gray4 = np.hstack([gray4, np.zeros((h, 1), dtype=np.uint8)])
+    high = gray4[:, 0::2] << 4
+    low  = gray4[:, 1::2]
+    packed = (high | low).astype(np.uint8)
+
+    epd.display_4bpp(list(packed.tobytes()), 0, 0, w, h, GC16_MODE)
 
 
 if __name__ == "__main__":
