@@ -3,7 +3,7 @@
 Python driver and HTTP API for the **Waveshare 7.8" E-Ink HAT** (1872×1404, IT8951 controller)
 on an **Orange Pi Zero 2W** (Allwinner H616, 1.5GB RAM).
 
-![SneakyJoe Avatar on E-Ink](test_image.jpg)
+![SneakyJoe Avatar on E-Ink](https://media.discordapp.net/attachments/337997702170279946/1529633966275952680/PXL_20260722_233745690.MP.jpg?ex=6a62a624&is=6a6154a4&hm=1f21369a3ffde08f96da7da189940bb5c3112ee617fe67bf23216b8fe44c492a&animated=true&width=1785&height=1344)
 
 ## Features
 
