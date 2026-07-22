@@ -1,0 +1,8 @@
+# Python dependencies for IT8951 e-paper display driver
+# These are typically installed via apt on Ubuntu 24.04 (Orange Pi Zero 2W):
+#   sudo apt install python3-pil python3-libgpiod python3-spidev
+#
+# If installing via pip instead:
+spidev>=3.5
+gpiod>=1.6
+Pillow>=10.0

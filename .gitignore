@@ -1,0 +1,43 @@
+# SSH keys — NEVER commit
+key
+*.key
+*.pem
+id_*
+*_rsa
+*_ed25519
+
+# Private config
+.env
+*.secret
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Images (test artifacts)
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.gif
+# Exception: keep images in docs/
+!docs/*.png
+!docs/*.jpg
