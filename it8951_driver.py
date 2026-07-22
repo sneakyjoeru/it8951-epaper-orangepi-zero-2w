@@ -363,10 +363,13 @@ class IT8951:
     def display_image(self, pil_image, mode=GC16_MODE):
         """Display a PIL Image on the screen, auto-scaling to fit while
         preserving aspect ratio. Image is centered on a white background.
+        Uses Pillow's C-optimized Floyd-Steinberg dithering + numpy for
+        fast 4bpp packing.
 
         pil_image: PIL.Image (any mode, any size).
         """
         from PIL import Image
+        import numpy as np
 
         # Convert to grayscale ('L' mode: 0=black, 255=white)
         if pil_image.mode != "L":
@@ -389,22 +392,45 @@ class IT8951:
         offset_y = (screen_h - new_h) // 2
         canvas.paste(pil_image, (offset_x, offset_y))
 
-        # Convert to 4bpp: L (0-255) → 4bpp (0-15)
-        # PIL L: 0=black, 255=white. Our 4bpp: 0=white, 15=black.
-        # So invert: 4bpp_gray = 15 - (L // 17)
-        pixels = canvas.load()
-        bpr = (screen_w * 4 + 7) // 8
-        img_4bpp = bytearray(bpr * screen_h)
-        for row in range(screen_h):
-            for col in range(screen_w):
-                l_val = pixels[col, row]           # 0=black, 255=white
-                gray4 = 15 - (l_val * 15 // 255)   # 0=white, 15=black
-                off = row * bpr + col // 2
-                if col % 2 == 0:
-                    img_4bpp[off] |= (gray4 << 4)
-                else:
-                    img_4bpp[off] |= gray4
+        # Floyd-Steinberg dither to 16 levels using Pillow's C engine (fast).
+        # Then use numpy for vectorized 4bpp packing (no Python pixel loop).
+        # We create a custom 16-level grayscale palette so quantize indices
+        # directly map to our 4bpp gray values (0=white → 15=black).
+        # Palette: index i → L = 255 - i*17 (i=0 → 255=white, i=15 → 0=black)
+        pal = list(range(256)) * 3  # identity palette, we'll override
+        # Build 16-entry grayscale palette: 0=white(255), 15=black(0)
+        gray_palette = []
+        for i in range(256):
+            gray_palette.append(i)
+        # Use a simpler approach: dither directly to 16 uniform levels
+        # Map: L → 4bpp gray = 15 - round(L / 17), with FS dithering
+        # Pillow quantize with dithering does this if we give it the right palette
+        pal_img = Image.new("P", (1, 1))
+        pal_img.putpalette([255 - i * 17 for i in range(16)] * 3 + [0] * (768 - 48))
+        quantized = canvas.quantize(colors=16, palette=pal_img, dither=Image.FLOYDSTEINBERG)
 
+        # quantized indices: 0=white(L255)→4bpp 0, 15=black(L0)→4bpp 15
+        # So index == 4bpp gray directly! No remapping needed.
+
+        # Vectorized 4bpp packing with numpy
+        raw = np.frombuffer(quantized.tobytes(), dtype=np.uint8)
+        raw = raw.reshape((screen_h, screen_w))
+
+        # Pack pairs of pixels: even columns → high nibble, odd → low nibble
+        bpr = (screen_w * 4 + 7) // 8
+        # Ensure even width for packing (pad if needed)
+        if screen_w % 2 != 0:
+            raw = np.hstack([raw, np.zeros((screen_h, 1), dtype=np.uint8)])
+
+        high = raw[:, 0::2] << 4   # even cols → high nibble
+        low  = raw[:, 1::2]        # odd cols → low nibble
+        packed = (high | low).astype(np.uint8)  # shape: (screen_h, screen_w//2)
+
+        # Pad to bpr if needed (for odd widths where bpr > screen_w//2)
+        if packed.shape[1] < bpr:
+            packed = np.hstack([packed, np.zeros((screen_h, bpr - packed.shape[1]), dtype=np.uint8)])
+
+        img_4bpp = packed.tobytes()
         self.display_4bpp(list(img_4bpp), 0, 0, screen_w, screen_h, mode)
 
     def display_text(self, text, font_size=48, font_path=None,
