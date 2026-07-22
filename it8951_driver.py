@@ -327,15 +327,16 @@ class IT8951:
         self._write_data(mode)
 
     def clear(self, mode=INIT_MODE):
-        """Clear the entire screen to white."""
+        """Clear the entire screen to white.
+        Hardware inverts: send 0 (PIL black) → shows white on screen.
+        """
         w, h = self.panel_w, self.panel_h
-        # 8bpp: 255=white in PIL convention, display_8bpp inverts for hardware
         self._set_target_mem_addr(self.mem_addr)
         self._load_img_area_start(IT8951_8BPP, 0, 0, w, h)
-        data = [255] * (w * h)
+        data = bytearray([0] * (w * h))
         if w * h % 2 != 0:
             data.append(0)
-        self._write_data_bytes(bytearray(255 - b for b in data))
+        self._write_data_bytes(data)
         self._load_img_end()
         self._display_area(0, 0, w, h, mode)
         self._wait_display_ready()
@@ -366,21 +367,19 @@ class IT8951:
         """Display an 8bpp grayscale image.
         img_bytes: raw 8bpp data, 1 byte per pixel (0=black, 255=white in PIL convention).
         Size must be w * h bytes.
-        Global inversion applied before sending (compensates hardware inversion).
+        NO inversion needed — hardware already inverts (255=white in PIL → shows white).
         """
         if w is None: w = self.panel_w
         if h is None: h = self.panel_h
 
-        # Global color inversion: 255-val (compensates hardware inversion)
-        # PIL convention: 0=black, 255=white. After inversion, hardware shows correctly.
-        inverted = bytearray(255 - b for b in img_bytes)
+        # Pad to even length (2 pixels per 16-bit word)
+        data = bytearray(img_bytes)
+        if len(data) % 2 != 0:
+            data.append(0)
 
         self._set_target_mem_addr(self.mem_addr)
         self._load_img_area_start(IT8951_8BPP, x, y, w, h)
-        # 8bpp data is sent as 16-bit words (big-endian) — just pad to even length
-        if len(inverted) % 2 != 0:
-            inverted.append(0)
-        self._write_data_bytes(inverted)
+        self._write_data_bytes(data)
         self._load_img_end()
         self._display_area(x, y, w, h, mode)
         self._wait_display_ready()
