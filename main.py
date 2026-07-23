@@ -91,37 +91,32 @@ def main():
             print("Displayed.")
 
         if args.gradient:
-            print("Displaying vertical gradient (dithered)...")
+            import time
+            print("Clear + gradient (one process)...")
             w, h = epd.panel_w, epd.panel_h
             import numpy as np
-            # Smooth gradient: for each pixel, compute fractional gray level
-            # then use random dithering to pick integer level.
-            # This gives soft transitions with no hard stripe edges.
-            gray4 = np.zeros((h, w), dtype=np.uint8)  # 0=white, 15=black
-
+            gray4 = np.zeros((h, w), dtype=np.uint8)
             for row in range(h):
-                # Continuous gray value 0→15 top to bottom
                 cont = row / max(h - 1, 1) * 15.0
-                base = int(cont)        # integer part
-                frac = cont - base       # fractional part (0..1)
-                # Random dithering: pixel gets base+1 with probability=frac
+                base = int(cont)
+                frac = cont - base
                 noise = np.random.random(w)
                 vals = np.where(noise < frac, base + 1, base)
                 gray4[row] = np.clip(vals, 0, 15).astype(np.uint8)
-
-            # Pack 4bpp
             if w % 2 != 0:
                 gray4 = np.hstack([gray4, np.zeros((h, 1), dtype=np.uint8)])
             high = gray4[:, 0::2] << 4
             low  = gray4[:, 1::2]
             packed = (high | low).astype(np.uint8)
-
-            epd.display_4bpp(list(packed.tobytes()), 0, 0, w, h, GC16_MODE)
-            print("Done.")
+            t0 = time.time()
+            epd.clear_then_display_4bpp(list(packed.tobytes()), GC16_MODE)
+            t1 = time.time()
+            print("Done. Total: %.2fs (clear + gradient)" % (t1 - t0))
 
         if args.checker is not None:
+            import time
             cell = args.checker
-            print("Displaying checkerboard (%dpx cells)..." % cell)
+            print("Clear + checkerboard (%dpx, one process)..." % cell)
             w, h = epd.panel_w, epd.panel_h
             img = bytearray(w * h)
             for row in range(h):
@@ -130,15 +125,16 @@ def main():
                 for col in range(w):
                     cx = col // cell
                     img[off + col] = 0 if (cx + cy) % 2 == 0 else 255
-            epd.display_8bpp(list(img), 0, 0, w, h, GC16_MODE)
-            print("Done.")
+            t0 = time.time()
+            epd.clear_then_display_8bpp(list(img), GC16_MODE)
+            t1 = time.time()
+            print("Done. Total: %.2fs" % (t1 - t0))
 
         if args.checker_fast is not None:
-            cell = args.checker_fast
             import time
-            print("Displaying checkerboard (%dpx, 4bpp GC16)..." % cell)
+            cell = args.checker_fast
+            print("Clear + checkerboard (%dpx, 4bpp, one process)..." % cell)
             w, h = epd.panel_w, epd.panel_h
-            # 4bpp: 0=white, 15=black. Half the data size of 8bpp.
             bpr = (w * 4 + 7) // 8
             img = bytearray(bpr * h)
             for row in range(h):
@@ -147,13 +143,13 @@ def main():
                 for col_pair in range(w // 2):
                     cx0 = (col_pair * 2) // cell
                     cx1 = (col_pair * 2 + 1) // cell
-                    v0 = 0x0F if (cx0 + cy) % 2 == 0 else 0x00  # black or white
+                    v0 = 0x0F if (cx0 + cy) % 2 == 0 else 0x00
                     v1 = 0x0F if (cx1 + cy) % 2 == 0 else 0x00
                     img[off + col_pair] = (v0 << 4) | v1
             t0 = time.time()
-            epd.display_4bpp(list(img), 0, 0, w, h, GC16_MODE)
+            epd.clear_then_display_4bpp(list(img), GC16_MODE)
             t1 = time.time()
-            print("Done. 4bpp GC16 refresh took %.2fs" % (t1 - t0))
+            print("Done. Total: %.2fs" % (t1 - t0))
 
         if args.clear_checker is not None:
             cell = args.clear_checker
@@ -170,47 +166,51 @@ def main():
                     v0 = 0x0F if (cx0 + cy) % 2 == 0 else 0x00
                     v1 = 0x0F if (cx1 + cy) % 2 == 0 else 0x00
                     img[off + col_pair] = (v0 << 4) | v1
-            print("Single GC16 refresh (no separate clear)...")
+            print("Clear + checker (one process)...")
             t0 = time.time()
-            epd.display_4bpp(list(img), 0, 0, w, h, GC16_MODE)
+            epd.clear_then_display_4bpp(list(img), GC16_MODE)
             t1 = time.time()
-            print("Done. Total: %.2fs (single GC16, no INIT clear)" % (t1 - t0))
+            print("Done. Total: %.2fs" % (t1 - t0))
 
         if args.clear_cross is not None:
             import time
             lw = args.clear_cross
-            print("Clear + cross in one process (%dpx)..." % lw)
+            print("Clear + cross (%dpx, one process)..." % lw)
             t0 = time.time()
-            # GC16 does its own full refresh — skip separate INIT clear
-            # The cross has white background so GC16 refresh clears ghosting
-            _draw_cross(epd, lw, args.invert, args.vertical)
+            _draw_cross_clean(epd, lw, args.invert, args.vertical)
             t1 = time.time()
-            print("Done. Total: %.2fs (single GC16, no separate clear)" % (t1 - t0))
+            print("Done. Total: %.2fs" % (t1 - t0))
 
         if args.cross is not None:
+            import time
             lw = args.cross
-            print("Displaying cross (%dpx, vertical=%s, invert=%s)..." % (lw, args.vertical, args.invert))
-            _draw_cross(epd, lw, args.invert, args.vertical)
-            print("Done.")
+            print("Clear + cross (%dpx, one process)..." % lw)
+            t0 = time.time()
+            _draw_cross_clean(epd, lw, args.invert, args.vertical)
+            t1 = time.time()
+            print("Done. Total: %.2fs" % (t1 - t0))
 
         if args.quarter:
-            print("Displaying quarter black...")
+            import time
+            print("Clear + quarter (one process)...")
             w, h = epd.panel_w, epd.panel_h
-            img = bytearray([255] * (w * h))  # white
+            img = bytearray([255] * (w * h))
             hw, hh = w // 2, h // 2
             for row in range(hh):
                 off = row * w
                 for col in range(hw):
-                    img[off + col] = 0  # black
-            epd.display_8bpp(list(img), 0, 0, w, h, GC16_MODE)
-            print("Done.")
+                    img[off + col] = 0
+            t0 = time.time()
+            epd.clear_then_display_8bpp(list(img), GC16_MODE)
+            t1 = time.time()
+            print("Done. Total: %.2fs" % (t1 - t0))
 
     finally:
         epd.close()
 
 
-def _draw_cross(epd, line_width, invert, vertical):
-    """Draw gradient diagonal cross with random dithering (4bpp, 0=white, 15=black)."""
+def _draw_cross_clean(epd, line_width, invert, vertical):
+    """Draw gradient diagonal cross with INIT clear + GC16 render (one process)."""
     import numpy as np
     w, h = epd.panel_w, epd.panel_h
     # 4bpp: 0=white, 15=black. bg=15 if invert (black bg) else 0 (white bg)
@@ -260,7 +260,7 @@ def _draw_cross(epd, line_width, invert, vertical):
     low  = gray4[:, 1::2]
     packed = (high | low).astype(np.uint8)
 
-    epd.display_4bpp(list(packed.tobytes()), 0, 0, w, h, GC16_MODE)
+    epd.clear_then_display_4bpp(list(packed.tobytes()), GC16_MODE)
 
 
 if __name__ == "__main__":
