@@ -341,6 +341,49 @@ class IT8951:
         self._display_area(0, 0, w, h, mode)
         self._wait_display_ready()
 
+    def clear_then_display_4bpp(self, img_bytes, mode=GC16_MODE):
+        """Clear screen with INIT, then display 4bpp image with GC16 — overlapped.
+        Triggers INIT clear, loads image data while the display refreshes
+        (SPI is free during refresh), then triggers GC16 display immediately
+        after clear finishes. Saves ~5s vs sequential clear+display.
+        """
+        w, h = self.panel_w, self.panel_h
+
+        # 1. Load white image and trigger INIT clear
+        self._set_target_mem_addr(self.mem_addr)
+        self._load_img_area_start(IT8951_8BPP, 0, 0, w, h)
+        clear_data = bytearray([0] * (w * h))
+        if len(clear_data) % 2: clear_data.append(0)
+        self._write_data_bytes(clear_data)
+        self._load_img_end()
+        self._display_area(0, 0, w, h, INIT_MODE)
+
+        # 2. While INIT refresh runs in background, load the image data via SPI
+        # The SPI bus is free during display refresh — BUSY is for SPI commands,
+        # LUTAFSR tracks the LUT engine separately.
+        # We need to wait for SPI BUSY (not display LUT) between SPI ops.
+        # Invert 4bpp data while loading
+        bpr = (w * 4 + 7) // 8
+        total = bpr * h
+        inverted = bytearray(total)
+        for i in range(total):
+            b = img_bytes[i]
+            hi = (b >> 4) & 0x0F
+            lo = b & 0x0F
+            inverted[i] = ((15 - hi) << 4) | (15 - lo)
+
+        self._set_target_mem_addr(self.mem_addr)
+        self._load_img_area_start(IT8951_4BPP, 0, 0, w, h)
+        self._write_data_bytes(inverted)
+        self._load_img_end()
+
+        # 3. Wait for INIT clear to finish (LUT engine)
+        self._wait_display_ready()
+
+        # 4. Trigger GC16 display immediately — image data already loaded
+        self._display_area(0, 0, w, h, mode)
+        self._wait_display_ready()
+
     def display_4bpp(self, img_bytes, x=0, y=0, w=None, h=None, mode=GC16_MODE):
         """Display a 4bpp grayscale image.
         img_bytes: raw 4bpp data, 2 pixels per byte (high nibble = first pixel).

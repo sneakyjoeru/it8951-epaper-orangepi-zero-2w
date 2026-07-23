@@ -169,15 +169,11 @@ def main():
                     v0 = 0x0F if (cx0 + cy) % 2 == 0 else 0x00
                     v1 = 0x0F if (cx1 + cy) % 2 == 0 else 0x00
                     img[off + col_pair] = (v0 << 4) | v1
-            print("INIT clear...")
+            print("Single GC16 refresh (no separate clear)...")
             t0 = time.time()
-            epd.clear()
-            t1 = time.time()
-            print("Clear done (%.2fs). 4bpp checker..." % (t1 - t0))
-            t2 = time.time()
             epd.display_4bpp(list(img), 0, 0, w, h, GC16_MODE)
-            t3 = time.time()
-            print("Checker done (%.2fs). Total: %.2fs" % (t3 - t2, t3 - t0))
+            t1 = time.time()
+            print("Done. Total: %.2fs (single GC16, no INIT clear)" % (t1 - t0))
 
         if args.cross is not None:
             lw = args.cross
