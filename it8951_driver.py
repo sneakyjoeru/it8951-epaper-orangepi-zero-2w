@@ -525,7 +525,8 @@ class IT8951:
         if scale < 1.0:
             new_w = int(img_w * scale)
             new_h = int(img_h * scale)
-            pil_image = pil_image.resize((new_w, new_h), Image.LANCZOS)
+            # BILINEAR is 2x faster than LANCZOS, quality is fine for e-ink
+            pil_image = pil_image.resize((new_w, new_h), Image.BILINEAR)
         else:
             new_w, new_h = img_w, img_h
 
@@ -535,20 +536,19 @@ class IT8951:
         offset_y = (screen_h - new_h) // 2
         canvas.paste(pil_image, (offset_x, offset_y))
 
-        # Brightness adjustment: gamma correction on non-background pixels
+        # Gamma correction + 4bpp conversion in one pass using LUT
+        import numpy as np
+        arr = np.array(canvas, dtype=np.uint8)
+
         if brightness != 1.0:
-            import numpy as np
-            arr = np.array(canvas, dtype=np.float64) / 255.0
-            mask = np.abs(arr * 255 - bg_color) > 2
-            arr[mask] = np.power(arr[mask], 1.0 / brightness)
-            canvas = Image.fromarray((arr * 255).clip(0, 255).astype(np.uint8), "L")
+            # Precompute gamma LUT: 256→256 lookup (instant, no per-pixel math)
+            lut = np.clip((np.power(np.arange(256, dtype=np.float64) / 255.0,
+                          1.0 / brightness) * 255.0), 0, 255).astype(np.uint8)
+            arr = lut[arr]
 
         # Convert to 4bpp (0=white, 15=black) — half the SPI data of 8bpp
-        import numpy as np
-        arr = np.array(canvas, dtype=np.float64)
         # PIL L: 0=black, 255=white. 4bpp: 0=white, 15=black.
-        # gray4 = 15 - (L / 17)
-        gray4 = (15 - np.round(arr / 17.0)).clip(0, 15).astype(np.uint8)
+        gray4 = (15 - (arr // 17)).astype(np.uint8)
 
         # Pack 4bpp: even cols → high nibble, odd cols → low nibble
         if screen_w % 2 != 0:
