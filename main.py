@@ -33,6 +33,8 @@ def main():
     parser.add_argument("--image", metavar="PATH", help="display image file (auto-scaled)")
     parser.add_argument("--gradient", action="store_true", help="full-screen vertical gradient")
     parser.add_argument("--checker", type=int, nargs="?", const=50, metavar="PX", help="checkerboard pattern (cell size px)")
+    parser.add_argument("--checker-fast", type=int, nargs="?", const=50, metavar="PX", help="checkerboard using A2 fast refresh (~0.3s)")
+    parser.add_argument("--clear-checker", type=int, nargs="?", const=50, metavar="PX", help="INIT clear then instant A2 checkerboard")
     parser.add_argument("--cross", type=int, nargs="?", const=9, metavar="PX", help="gradient diagonal cross (line width px)")
     parser.add_argument("--quarter", action="store_true", help="top-left quarter black")
     parser.add_argument("--server", action="store_true", help="start HTTP API server")
@@ -55,7 +57,8 @@ def main():
         epd.init()
 
         if args.info or not any([args.clear, args.text, args.image, args.gradient,
-                                  args.checker is not None, args.cross is not None,
+                                  args.checker is not None, args.checker_fast is not None,
+                                  args.clear_checker is not None, args.cross is not None,
                                   args.quarter]):
             info = epd.get_info()
             vcom = epd.get_vcom()
@@ -128,6 +131,56 @@ def main():
                     img[off + col] = 0 if (cx + cy) % 2 == 0 else 255
             epd.display_8bpp(list(img), 0, 0, w, h, GC16_MODE)
             print("Done.")
+
+        if args.checker_fast is not None:
+            cell = args.checker_fast
+            import time
+            print("Displaying checkerboard (%dpx, A2 fast)..." % cell)
+            w, h = epd.panel_w, epd.panel_h
+            bpr = w // 8
+            img = bytearray(bpr * h)
+            for row in range(h):
+                cy = row // cell
+                off = row * bpr
+                for col_byte in range(bpr):
+                    bits = 0
+                    for bit in range(8):
+                        col = col_byte * 8 + bit
+                        cx = col // cell
+                        if (cx + cy) % 2 == 0:
+                            bits |= (1 << (7 - bit))
+                    img[off + col_byte] = bits
+            t0 = time.time()
+            epd.display_1bpp_a2(list(img), 0, 0, w, h)
+            t1 = time.time()
+            print("Done. A2 refresh took %.2fs" % (t1 - t0))
+
+        if args.clear_checker is not None:
+            cell = args.clear_checker
+            import time
+            w, h = epd.panel_w, epd.panel_h
+            bpr = w // 8
+            img = bytearray(bpr * h)
+            for row in range(h):
+                cy = row // cell
+                off = row * bpr
+                for col_byte in range(bpr):
+                    bits = 0
+                    for bit in range(8):
+                        col = col_byte * 8 + bit
+                        cx = col // cell
+                        if (cx + cy) % 2 == 0:
+                            bits |= (1 << (7 - bit))
+                    img[off + col_byte] = bits
+            print("INIT clear...")
+            t0 = time.time()
+            epd.clear()
+            t1 = time.time()
+            print("Clear done (%.2fs). Instant A2 checker..." % (t1 - t0))
+            t2 = time.time()
+            epd.display_1bpp_a2(list(img), 0, 0, w, h)
+            t3 = time.time()
+            print("Checker done (%.2fs). Total: %.2fs" % (t3 - t2, t3 - t0))
 
         if args.cross is not None:
             lw = args.cross

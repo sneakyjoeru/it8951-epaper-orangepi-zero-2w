@@ -384,6 +384,42 @@ class IT8951:
         self._display_area(x, y, w, h, mode)
         self._wait_display_ready()
 
+    def display_1bpp_a2(self, img_bytes, x=0, y=0, w=None, h=None):
+        """Display a 1bpp black/white image using A2 fast refresh mode.
+        img_bytes: raw 1bpp data, 8 pixels per byte (MSB=first pixel).
+        0 bit = white, 1 bit = black. w must be multiple of 8.
+        Size must be (w // 8) * h bytes.
+        A2 mode refreshes in ~0.3s (vs ~5s for GC16).
+        Requires periodic INIT clear to remove ghosting.
+        """
+        if w is None: w = self.panel_w
+        if h is None: h = self.panel_h
+
+        self._set_target_mem_addr(self.mem_addr)
+
+        # Enable 1bpp mode: set UP1SR+2 bit[2]
+        val = self.read_reg(UP1SR + 2)
+        self.write_reg(UP1SR + 2, val | (1 << 2))
+        # Set background=white(0xFF), foreground=black(0x00)
+        self.write_reg(BGVR, (0x00 << 8) | 0xFF)
+
+        # Load image as 2bpp (IT8951 uses 2bpp format for 1bpp data)
+        self._load_img_area_start(IT8951_2BPP, x, y, w, h)
+        # For 1bpp, data is sent as-is (each byte = 8 pixels, packed as 16-bit words)
+        data = bytearray(img_bytes)
+        if len(data) % 2 != 0:
+            data.append(0)
+        self._write_data_bytes(data)
+        self._load_img_end()
+
+        # Display with A2 mode (fast)
+        self._display_area(x, y, w, h, self.a2_mode)
+        self._wait_display_ready()
+
+        # Disable 1bpp mode
+        val = self.read_reg(UP1SR + 2)
+        self.write_reg(UP1SR + 2, val & ~(1 << 2))
+
     def display_image(self, pil_image, mode=GC16_MODE, dither=True, bg_color=255, brightness=1.0):
         """Display a PIL Image on the screen, auto-scaling to fit while
         preserving aspect ratio. Image is centered on a background.
