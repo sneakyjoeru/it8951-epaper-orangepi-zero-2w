@@ -384,13 +384,12 @@ class IT8951:
         self._display_area(x, y, w, h, mode)
         self._wait_display_ready()
 
-    def display_1bpp_a2(self, img_bytes, x=0, y=0, w=None, h=None):
-        """Display a 1bpp black/white image using A2 fast refresh mode.
+    def display_1bpp_a2(self, img_bytes, x=0, y=0, w=None, h=None, mode=INIT_MODE):
+        """Display a 1bpp black/white image using fast refresh mode.
         img_bytes: raw 1bpp data, 8 pixels per byte (MSB=first pixel).
         0 bit = white, 1 bit = black. w must be multiple of 8.
         Size must be (w // 8) * h bytes.
-        A2 mode refreshes in ~0.3s (vs ~5s for GC16).
-        Requires periodic INIT clear to remove ghosting.
+        Uses INIT mode for full contrast (~2s) or A2 for speed (~1.3s, weak).
         """
         if w is None: w = self.panel_w
         if h is None: h = self.panel_h
@@ -404,18 +403,15 @@ class IT8951:
         self.write_reg(BGVR, (0x00 << 8) | 0xFF)
 
         # Load image: use 8BPP format, coordinates in BYTES (not pixels)
-        # Area_W = w/8 (byte width), Area_X = x/8
         self._load_img_area_start(IT8951_8BPP, x // 8, y, w // 8, h)
-        # Data: each byte = 8 pixels, sent as 16-bit words
         data = bytearray(img_bytes)
         if len(data) % 2 != 0:
             data.append(0)
         self._write_data_bytes(data)
         self._load_img_end()
 
-        # Display with INIT mode for full contrast black/white
-        # A2 is fast but weak; INIT gives solid black/white at the cost of a flash
-        self._display_area(x, y, w, h, INIT_MODE)
+        # Display — pixel coordinates
+        self._display_area(x, y, w, h, mode)
         self._wait_display_ready()
 
         # Disable 1bpp mode

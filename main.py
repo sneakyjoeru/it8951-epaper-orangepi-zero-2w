@@ -135,50 +135,47 @@ def main():
         if args.checker_fast is not None:
             cell = args.checker_fast
             import time
-            print("Displaying checkerboard (%dpx, A2 fast)..." % cell)
+            print("Displaying checkerboard (%dpx, 4bpp GC16)..." % cell)
             w, h = epd.panel_w, epd.panel_h
-            bpr = w // 8
+            # 4bpp: 0=white, 15=black. Half the data size of 8bpp.
+            bpr = (w * 4 + 7) // 8
             img = bytearray(bpr * h)
             for row in range(h):
                 cy = row // cell
                 off = row * bpr
-                for col_byte in range(bpr):
-                    bits = 0
-                    for bit in range(8):
-                        col = col_byte * 8 + bit
-                        cx = col // cell
-                        if (cx + cy) % 2 == 0:
-                            bits |= (1 << (7 - bit))
-                    img[off + col_byte] = bits
+                for col_pair in range(w // 2):
+                    cx0 = (col_pair * 2) // cell
+                    cx1 = (col_pair * 2 + 1) // cell
+                    v0 = 0x0F if (cx0 + cy) % 2 == 0 else 0x00  # black or white
+                    v1 = 0x0F if (cx1 + cy) % 2 == 0 else 0x00
+                    img[off + col_pair] = (v0 << 4) | v1
             t0 = time.time()
-            epd.display_1bpp_a2(list(img), 0, 0, w, h)
+            epd.display_4bpp(list(img), 0, 0, w, h, GC16_MODE)
             t1 = time.time()
-            print("Done. A2 refresh took %.2fs" % (t1 - t0))
+            print("Done. 4bpp GC16 refresh took %.2fs" % (t1 - t0))
 
         if args.clear_checker is not None:
             cell = args.clear_checker
             import time
             w, h = epd.panel_w, epd.panel_h
-            bpr = w // 8
+            bpr = (w * 4 + 7) // 8
             img = bytearray(bpr * h)
             for row in range(h):
                 cy = row // cell
                 off = row * bpr
-                for col_byte in range(bpr):
-                    bits = 0
-                    for bit in range(8):
-                        col = col_byte * 8 + bit
-                        cx = col // cell
-                        if (cx + cy) % 2 == 0:
-                            bits |= (1 << (7 - bit))
-                    img[off + col_byte] = bits
+                for col_pair in range(w // 2):
+                    cx0 = (col_pair * 2) // cell
+                    cx1 = (col_pair * 2 + 1) // cell
+                    v0 = 0x0F if (cx0 + cy) % 2 == 0 else 0x00
+                    v1 = 0x0F if (cx1 + cy) % 2 == 0 else 0x00
+                    img[off + col_pair] = (v0 << 4) | v1
             print("INIT clear...")
             t0 = time.time()
             epd.clear()
             t1 = time.time()
-            print("Clear done (%.2fs). Instant A2 checker..." % (t1 - t0))
+            print("Clear done (%.2fs). 4bpp checker..." % (t1 - t0))
             t2 = time.time()
-            epd.display_1bpp_a2(list(img), 0, 0, w, h)
+            epd.display_4bpp(list(img), 0, 0, w, h, GC16_MODE)
             t3 = time.time()
             print("Checker done (%.2fs). Total: %.2fs" % (t3 - t2, t3 - t0))
 
